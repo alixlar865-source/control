@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>أثر — ارسم بيديك في الهواء</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0a12;
+    --panel:rgba(21,19,30,.78);
+    --panel-border:rgba(255,255,255,.09);
+    --accent:#ffb454;
+    --text:#f4efe6;
+    --muted:#9a93ab;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:'IBM Plex Sans Arabic',system-ui,sans-serif;color:var(--text);
+    -webkit-tap-highlight-color:transparent;}
+  video{display:none;}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;}
+  #scan{position:fixed;inset:0;z-index:2;pointer-events:none;mix-blend-mode:overlay;opacity:.5;
+    background:repeating-linear-gradient(to bottom, rgba(255,255,255,.025) 0px, rgba(255,255,255,.025) 1px, transparent 1px, transparent 3px);}
+
+  .corner{position:fixed;width:26px;height:26px;z-index:3;pointer-events:none;
+    border:2px solid rgba(160,210,255,.5);filter:drop-shadow(0 0 6px rgba(120,190,255,.55));}
+  .corner.tl{top:14px;left:14px;border-right:none;border-bottom:none;border-radius:8px 0 0 0;}
+  .corner.tr{top:14px;right:14px;border-left:none;border-bottom:none;border-radius:0 8px 0 0;}
+  .corner.bl{bottom:14px;left:14px;border-right:none;border-top:none;border-radius:0 0 0 8px;}
+  .corner.br{bottom:14px;right:14px;border-left:none;border-top:none;border-radius:0 0 8px 0;}
+  #sweep{position:fixed;left:0;right:0;height:2px;z-index:3;pointer-events:none;top:0;opacity:0;
+    background:linear-gradient(90deg,transparent,rgba(160,210,255,.65),transparent);
+    animation:sweepMove 6s linear infinite;}
+  @keyframes sweepMove{0%{top:0;opacity:0;}6%{opacity:1;}94%{opacity:1;}100%{top:100%;opacity:0;}}
+
+  #flash{position:fixed;inset:0;z-index:8;pointer-events:none;opacity:0;
+    background:radial-gradient(circle,rgba(255,255,255,.9),rgba(160,210,255,.35) 42%,transparent 72%);}
+  #flash.go{animation:flashGo .6s ease-out;}
+  @keyframes flashGo{0%{opacity:1;}100%{opacity:0;}}
+
+  .panel{position:fixed;z-index:5;background:var(--panel);backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px);border:1px solid var(--panel-border);border-radius:16px;}
+
+  #topbar{top:16px;right:16px;left:16px;display:flex;align-items:center;justify-content:space-between;
+    gap:10px;padding:10px 16px;}
+  #brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px;}
+  #brand .mark{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);}
+  #handCount{color:var(--muted);font-weight:500;font-size:11.5px;margin:0 2px;}
+
+  .btn{border:none;cursor:pointer;padding:10px 20px;border-radius:11px;font-family:inherit;
+    font-weight:700;font-size:13.5px;background:var(--accent);color:#1a1206;
+    transition:transform .15s ease,opacity .15s ease;white-space:nowrap;}
+  .btn:active{transform:scale(.95);}
+  .btn.ghost{background:rgba(255,255,255,.08);color:var(--text);}
+  .btn.icon{padding:10px 14px;font-size:15px;line-height:1;}
+  .btn:disabled{opacity:.45;cursor:default;}
+
+  #hint{bottom:18px;left:50%;transform:translateX(-50%);max-width:min(94vw,620px);
+    text-align:center;font-size:11px;line-height:1.9;color:var(--muted);padding:10px 18px;}
+  #hint b{color:var(--text);font-weight:500;}
+
+  #status{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;gap:16px;
+    align-items:center;justify-content:center;background:var(--bg);text-align:center;padding:28px;}
+  #statusTitle{font-weight:700;font-size:17px;}
+  #statusSub{color:var(--muted);font-size:13px;max-width:280px;line-height:1.9;margin:0;}
+  .ring{width:30px;height:30px;border-radius:50%;border:3px solid rgba(255,255,255,.12);
+    border-top-color:var(--accent);animation:spin 1s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  @media (prefers-reduced-motion: reduce){ .ring{animation-duration:2.5s;} #sweep{animation:none;opacity:0;} }
+
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+  <video id="video" playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div id="scan"></div>
+  <div id="flash"></div>
+
+  <div id="status">
+    <div style="width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 18px var(--accent);"></div>
+    <div id="statusTitle">جاري تحميل نموذج تتبع اليد</div>
+    <div class="ring" id="ring"></div>
+    <p id="statusSub">يحدث هذا مرة واحدة فقط عند فتح الصفحة</p>
+    <button id="camBtn" class="btn hidden">تشغيل الكاميرا والبدء</button>
+  </div>
+
+  <div id="topbar" class="panel hidden">
+    <div id="brand"><span class="mark"></span> أثر <span id="handCount"></span></div>
+    <div style="display:flex;gap:8px;">
+      <button id="captureBtn" class="btn ghost icon" title="حفظ لقطة" aria-label="حفظ لقطة">📸</button>
+      <button id="clearBtn" class="btn ghost">مسح</button>
+    </div>
+  </div>
+
+  <div id="hint" class="panel hidden">
+    <b>اليمنى</b> ترسم وتتوهّج بالسرعة، وادفعها للكاميرا لدَفعة &nbsp;·&nbsp;
+    <b>اليسرى</b>: قرص يغيّر الحجم <i>وحجم الكوكب أسفل اليسار</i>، وعدد الأصابع يبدّل اللون &nbsp;·&nbsp;
+    <b>شكل ثابت باليمنى</b> يكتب حرفًا (D·V·W·B·I — عرض محدود وليس أبجدية كاملة) &nbsp;·&nbsp;
+    <b>لمس السبّابتين</b> اندماج &nbsp;·&nbsp; <b>✊</b> نبضة ومسح الكل، <b>✊✊</b> انفجار أكبر
+  </div>
+
+  <div class="corner tl hidden" id="cornerTL"></div>
+  <div class="corner tr hidden" id="cornerTR"></div>
+  <div class="corner bl hidden" id="cornerBL"></div>
+  <div class="corner br hidden" id="cornerBR"></div>
+  <div id="sweep" class="hidden"></div>
+
+<script type="module">
+import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs";
+
+const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
+const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingQuality = 'high';
+const statusEl = document.getElementById('status');
+const statusTitle = document.getElementById('statusTitle');
+const statusSub = document.getElementById('statusSub');
+const ring = document.getElementById('ring');
+const camBtn = document.getElementById('camBtn');
+const topbar = document.getElementById('topbar');
+const hint = document.getElementById('hint');
+const clearBtn = document.getElementById('clearBtn');
+const captureBtn = document.getElementById('captureBtn');
+const handCountEl = document.getElementById('handCount');
+const flashEl = document.getElementById('flash');
+const hudEls = ['cornerTL','cornerTR','cornerBL','cornerBR','sweep'].map(id => document.getElementById(id));
+
+let handLandmarker = null;
+let running = false;
+let lastTimestamp = -1;
+let brushSize = 24, targetBrushSize = 24;
+let trailCanvas = null, tctx = null;
+let audioCtx = null;
+const smoothed = {};
+const prevCenter = {};
+const prevZ = {};
+const fistState = { Left: false, Right: false };
+let bursts = [], novas = [], sparks = [], thrusts = [];
+let fusionReady = true, comboFired = false, pushReady = true;
+let lastHandSeenAt = -Infinity;
+
+const THEMES = [
+  { name: 'افتراضي', hues: [190, 206, 232, 262, 300], sat: 88 },
+  { name: 'مصفوفة',  hues: [140, 152, 164, 46, 55],   sat: 85 },
+  { name: 'سديم',    hues: [340, 354, 8, 275, 290],    sat: 82 },
+  { name: 'طيف',     hues: [0, 72, 144, 216, 288],     sat: 90 },
+  { name: 'شبح',     hues: [0, 0, 0, 0, 0],            sat: 6 },
+];
+let themeIndex = 0, themeCandidate = 0, themeStableFrames = 0;
+let themeFlashUntil = 0, themeFlashName = THEMES[0].name;
+
+const LETTER_MAP = { '1000': 'D', '1100': 'V', '1110': 'W', '1111': 'B', '0001': 'I' };
+let wordBuffer = '', letterCandidate = '', letterStableFrames = 0, lastCommittedLetter = '';
+
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17]
+];
+
+// ---- Live day/night Earth panel: real spherical 3D rotation ----
+function solarDeclination(date){
+  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
+  const dayOfYear = (date - start) / 86400000;
+  return -23.44 * Math.cos((2 * Math.PI / 365) * (dayOfYear + 10));
+}
+function subsolarLongitude(date){
+  const h = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+  let lon = -15 * (h - 12);
+  return ((lon + 180) % 360 + 360) % 360 - 180;
+}
+function isDaylight(lat, lon, decl, subLon){
+  const phi = lat * Math.PI / 180, d = decl * Math.PI / 180;
+  let dLon = lon - subLon; dLon = ((dLon + 180) % 360 + 360) % 360 - 180;
+  const H = dLon * Math.PI / 180;
+  return Math.sin(phi) * Math.sin(d) + Math.cos(phi) * Math.cos(d) * Math.cos(H) > 0;
+}
+function pointInPolygon(lon, lat, poly){
+  let inside = false;
+  for(let i = 0, j = poly.length - 1; i < poly.length; j = i++){
+    const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+    if(((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+const CONTINENTS = [
+  [[-17,21],[-11,28],[10,32],[20,32],[32,31],[44,12],[51,12],[48,2],[42,-15],[35,-25],[20,-35],[14,-23],[12,-6],[-10,5],[-17,14]],
+  [[-10,36],[-9,43],[-5,48],[5,51],[15,55],[25,60],[30,60],[40,66],[30,70],[10,63],[-5,58],[-10,50]],
+  [[26,42],[40,40],[50,45],[60,55],[70,55],[90,60],[110,55],[130,55],[145,52],[140,35],[122,25],[108,22],[100,10],[95,5],[80,8],[68,24],[60,25],[50,30],[35,38]],
+  [[-165,65],[-150,70],[-120,70],[-95,68],[-80,62],[-70,50],[-65,45],[-70,25],[-82,22],[-97,18],[-105,20],[-117,33],[-124,45],[-130,55],[-150,60]],
+  [[-80,10],[-75,5],[-60,5],[-50,0],[-35,-6],[-35,-20],[-40,-23],[-57,-35],[-65,-45],[-70,-52],[-73,-45],[-78,-20],[-81,-5]],
+  [[113,-22],[122,-18],[130,-12],[142,-11],[153,-27],[150,-37],[140,-38],[131,-32],[115,-35]],
+];
+function isLand(lon, lat){
+  if(lat < -62) return true;
+  return CONTINENTS.some(poly => pointInPolygon(lon, lat, poly));
+}
+const GLOBE_DOTS = (() => {
+  const dots = [];
+  for(let lat = -80; lat <= 80; lat += 6){
+    for(let lon = -180; lon < 180; lon += 6){
+      if(isLand(lon, lat)) dots.push({ lon, lat, city: Math.random() < 0.1, day: false });
+    }
+  }
+  return dots;
+})();
+const globeCache = { hh: '--', mm: '--' };
+function updateGlobeCache(){
+  const now = new Date();
+  const decl = solarDeclination(now), subLon = subsolarLongitude(now);
+  GLOBE_DOTS.forEach(d => { d.day = isDaylight(d.lat, d.lon, decl, subLon); });
+  globeCache.hh = String(now.getUTCHours()).padStart(2, '0');
+  globeCache.mm = String(now.getUTCMinutes()).padStart(2, '0');
+}
+updateGlobeCache();
+setInterval(updateGlobeCache, 1000);
+
+const GLOBE_ROTATION_PERIOD = 42; // seconds per full spin
+function drawGlobe(radius, t){
+  const cx = 92, cy = canvas.height - 150, R = radius;
+  const rotLon = (t * (360 / GLOBE_ROTATION_PERIOD)) % 360;
+
+  ctx.save();
+  // soft atmosphere glow, drawn first so the sphere sits on top of it
+  const atm = ctx.createRadialGradient(cx, cy, R * 0.9, cx, cy, R * 1.22);
+  atm.addColorStop(0, 'rgba(130,185,255,0.3)');
+  atm.addColorStop(1, 'rgba(130,185,255,0)');
+  ctx.fillStyle = atm;
+  ctx.beginPath(); ctx.arc(cx, cy, R * 1.22, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.closePath(); ctx.clip();
+  ctx.fillStyle = 'rgba(5,8,18,0.95)';
+  ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
+
+  GLOBE_DOTS.forEach(d => {
+    const lonR = (d.lon - rotLon) * Math.PI / 180, latR = d.lat * Math.PI / 180;
+    const x3 = Math.cos(latR) * Math.sin(lonR);
+    const z3 = Math.cos(latR) * Math.cos(lonR);
+    if(z3 <= 0.03) return; // far side of the sphere — a real 3D hidden-face cull, not a flat map
+    const y3 = Math.sin(latR);
+    const shade = 0.55 + 0.45 * z3; // subtle limb-darkening toward the sphere's edge
+    const sx = cx + x3 * R, sy = cy - y3 * R;
+    const night = !d.day;
+    const dotR = (d.city && night) ? 1.7 : 1.1;
+    const color = d.day
+      ? `rgba(255,221,150,${0.92 * shade})`
+      : (d.city ? `rgba(255,214,120,${0.95 * shade})` : `rgba(70,90,130,${0.55 * shade})`);
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = (d.day || (d.city && night)) ? 3 : 0;
+    ctx.beginPath(); ctx.arc(sx, sy, dotR, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(160,210,255,0.7)';
+  ctx.shadowColor = 'rgba(120,190,255,0.7)'; ctx.shadowBlur = 10; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+  ctx.font = '600 11px "IBM Plex Sans Arabic", system-ui, sans-serif'; ctx.textAlign = 'center';
+  ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(230,240,255,0.85)';
+  ctx.fillText(`UTC ${globeCache.hh}:${globeCache.mm}`, cx, cy + R + 16);
+  ctx.restore();
+}
+
+function resize(){
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+async function init(){
+  try{
+    const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+    try{
+      handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+        runningMode: "VIDEO", numHands: 2
+      });
+    }catch(_gpuErr){
+      handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
+        runningMode: "VIDEO", numHands: 2
+      });
+    }
+    ring.classList.add('hidden');
+    statusTitle.textContent = 'كل شيء جاهز';
+    statusSub.textContent = 'اضغط الزر وامنح إذن الكاميرا عند الطلب';
+    camBtn.classList.remove('hidden');
+  }catch(err){
+    ring.classList.add('hidden');
+    statusTitle.textContent = 'تعذّر تحميل نموذج التتبع';
+    statusSub.textContent = 'تحقق من اتصال الإنترنت ثم أعد تحميل الصفحة';
+    console.error(err);
+  }
+}
+
+async function startCamera(){
+  camBtn.disabled = true;
+  camBtn.textContent = 'جارٍ التشغيل…';
+  try{
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') await audioCtx.resume();
+  }catch(_e){}
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+    statusEl.classList.add('hidden');
+    topbar.classList.remove('hidden');
+    hint.classList.remove('hidden');
+    hudEls.forEach(el => el.classList.remove('hidden'));
+    flashEl.classList.add('go');
+    setTimeout(() => flashEl.classList.remove('go'), 650);
+    running = true;
+    requestAnimationFrame(loop);
+  }catch(err){
+    statusEl.classList.remove('hidden');
+    camBtn.disabled = false;
+    camBtn.textContent = 'تشغيل الكاميرا والبدء';
+    statusTitle.textContent = 'تعذّر الوصول إلى الكاميرا';
+    statusSub.textContent = 'فعّل إذن الكاميرا لهذا الموقع من إعدادات المتصفح ثم حاول مجددًا';
+    console.error(err);
+  }
+}
+
+function lerp(a, b, t){ return a + (b - a) * t; }
+function dist(ax, ay, bx, by){ return Math.hypot(ax - bx, ay - by); }
+
+function ensureTrailCanvas(){
+  if(!trailCanvas){ trailCanvas = document.createElement('canvas'); tctx = trailCanvas.getContext('2d'); }
+  if(trailCanvas.width !== canvas.width || trailCanvas.height !== canvas.height){
+    trailCanvas.width = canvas.width; trailCanvas.height = canvas.height;
+  }
+}
+function getCoverRect(){
+  const vw = video.videoWidth || canvas.width, vh = video.videoHeight || canvas.height;
+  const cw = canvas.width, ch = canvas.height;
+  const videoRatio = vw / vh, canvasRatio = cw / ch;
+  let sx, sy, sw, sh;
+  if(videoRatio > canvasRatio){ sh = vh; sw = vh * canvasRatio; sy = 0; sx = (vw - sw) / 2; }
+  else { sw = vw; sh = vw / canvasRatio; sx = 0; sy = (vh - sh) / 2; }
+  return { vw, vh, sx, sy, sw, sh };
+}
+function toCanvasXY(point, rect){
+  const px = point.x * rect.vw, py = point.y * rect.vh;
+  const nx = (px - rect.sx) / rect.sw, ny = (py - rect.sy) / rect.sh;
+  return { x: (1 - nx) * canvas.width, y: ny * canvas.height };
+}
+function drawVideoCover(rect){
+  ctx.save(); ctx.scale(-1, 1);
+  ctx.drawImage(video, rect.sx, rect.sy, rect.sw, rect.sh, -canvas.width, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+function smoothLandmarks(handed, rawLm){
+  const alpha = 0.5;
+  let s = smoothed[handed];
+  if(!s){ s = rawLm.map(p => ({ x: p.x, y: p.y, z: p.z || 0 })); smoothed[handed] = s; }
+  else {
+    for(let i = 0; i < rawLm.length; i++){
+      s[i].x = lerp(s[i].x, rawLm[i].x, alpha);
+      s[i].y = lerp(s[i].y, rawLm[i].y, alpha);
+      s[i].z = lerp(s[i].z, rawLm[i].z || 0, alpha);
+    }
+  }
+  return s;
+}
+function drawSkeleton(pts){
+  tctx.save();
+  tctx.strokeStyle = 'rgba(120,210,255,0.5)'; tctx.shadowColor = 'rgba(120,210,255,0.8)';
+  tctx.shadowBlur = 6; tctx.lineWidth = 1.6;
+  HAND_CONNECTIONS.forEach(([a, b]) => {
+    tctx.beginPath(); tctx.moveTo(pts[a].x, pts[a].y); tctx.lineTo(pts[b].x, pts[b].y); tctx.stroke();
+  });
+  tctx.restore();
+}
+function drawFingerWeb(pts, t){
+  const order = [4, 8, 12, 16, 20], hues = THEMES[themeIndex].hues;
+  tctx.save(); tctx.lineWidth = 1.4; tctx.shadowBlur = 8;
+  for(let i = 0; i < order.length - 1; i++){
+    const p1 = pts[order[i]], p2 = pts[order[i + 1]];
+    const hueMid = (hues[i] + hues[i + 1]) / 2;
+    const pulse = 0.35 + 0.25 * Math.sin(t * 2 + i);
+    const col = `hsla(${hueMid},${THEMES[themeIndex].sat}%,65%,${pulse})`;
+    tctx.strokeStyle = col; tctx.shadowColor = col;
+    const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2 - 10;
+    tctx.beginPath(); tctx.moveTo(p1.x, p1.y); tctx.quadraticCurveTo(mx, my, p2.x, p2.y); tctx.stroke();
+  }
+  tctx.restore();
+}
+function drawHandBridge(a, b, t){
+  tctx.save();
+  const pulse = 0.25 + 0.15 * Math.sin(t * 3);
+  const grad = tctx.createLinearGradient(a.x, a.y, b.x, b.y);
+  grad.addColorStop(0, `hsla(196,90%,65%,${pulse})`);
+  grad.addColorStop(1, `hsla(38,95%,65%,${pulse})`);
+  tctx.strokeStyle = grad; tctx.shadowColor = 'rgba(160,200,255,0.6)'; tctx.shadowBlur = 10; tctx.lineWidth = 1.6;
+  tctx.setLineDash([6, 10]); tctx.lineDashOffset = -t * 40;
+  tctx.beginPath(); tctx.moveTo(a.x, a.y); tctx.lineTo(b.x, b.y); tctx.stroke();
+  tctx.restore();
+}
+function drawOrb(r){
+  tctx.beginPath(); tctx.arc(0, 0, r * 0.3, 0, Math.PI * 2); tctx.fill();
+  tctx.lineWidth = Math.max(2, r * 0.08);
+  tctx.beginPath(); tctx.arc(0, 0, r * 0.58, 0.3, Math.PI * 1.7); tctx.stroke();
+}
+function drawReticle(r){
+  tctx.lineWidth = Math.max(2, r * 0.07);
+  tctx.beginPath(); tctx.arc(0, 0, r * 0.5, 0, Math.PI * 2); tctx.stroke();
+  const tick = r * 0.2;
+  [0, Math.PI / 2, Math.PI, Math.PI * 1.5].forEach(a => {
+    const x1 = Math.cos(a) * r * 0.5, y1 = Math.sin(a) * r * 0.5;
+    const x2 = Math.cos(a) * (r * 0.5 + tick), y2 = Math.sin(a) * (r * 0.5 + tick);
+    tctx.beginPath(); tctx.moveTo(x1, y1); tctx.lineTo(x2, y2); tctx.stroke();
+  });
+}
+function drawHexNode(r, t){
+  tctx.lineWidth = Math.max(2, r * 0.07);
+  tctx.beginPath();
+  for(let i = 0; i < 6; i++){ const a = i * Math.PI / 3 - Math.PI / 2; const px = Math.cos(a) * r * 0.55, py = Math.sin(a) * r * 0.55; i === 0 ? tctx.moveTo(px, py) : tctx.lineTo(px, py); }
+  tctx.closePath(); tctx.stroke();
+  tctx.save(); tctx.rotate(t);
+  tctx.beginPath();
+  for(let i = 0; i < 6; i++){ const a = i * Math.PI / 3 - Math.PI / 2; const px = Math.cos(a) * r * 0.28, py = Math.sin(a) * r * 0.28; i === 0 ? tctx.moveTo(px, py) : tctx.lineTo(px, py); }
+  tctx.closePath(); tctx.fill();
+  tctx.restore();
+}
+function drawChevronTriad(r, t){
+  tctx.save(); tctx.rotate(t);
+  for(let k = 0; k < 3; k++){
+    tctx.save(); tctx.rotate(k * (Math.PI * 2 / 3));
+    tctx.beginPath(); tctx.moveTo(0, -r * 0.3); tctx.lineTo(r * 0.22, -r * 0.62); tctx.lineTo(-r * 0.22, -r * 0.62);
+    tctx.closePath(); tctx.fill(); tctx.restore();
+  }
+  tctx.restore();
+}
+function drawRadarPing(r, t){
+  const baseAlpha = tctx.globalAlpha;
+  tctx.lineWidth = Math.max(2, r * 0.06);
+  for(let k = 0; k < 3; k++){
+    const phase = ((t * 0.6) + k / 3) % 1;
+    tctx.globalAlpha = baseAlpha * (1 - phase);
+    tctx.beginPath(); tctx.arc(0, 0, r * 0.2 + phase * r * 0.55, 0, Math.PI * 2); tctx.stroke();
+  }
+}
+const FINGER_CONFIG = [
+  { idx: 4, draw: drawOrb }, { idx: 8, draw: drawReticle }, { idx: 12, draw: drawHexNode },
+  { idx: 16, draw: drawChevronTriad }, { idx: 20, draw: drawRadarPing },
+];
+// A flat 2D spin plus a vertical "tumble" squash — a classic cheap trick
+// that reads as genuine 3D rotation on a plain 2D canvas (no WebGL).
+function stampFinger(x, y, size, hueDeg, sat, drawFn, t, boost){
+  tctx.save();
+  tctx.translate(x, y);
+  tctx.rotate((t * 0.5) % (Math.PI * 2));
+  const tumble = Math.cos(t * 1.15 + hueDeg * 0.1);
+  tctx.scale(1, 0.55 + Math.abs(tumble) * 0.45);
+  const light = Math.min(84, 55 + 8 * Math.sin(t * 1.6 + hueDeg) + boost * 16);
+  const color = `hsl(${hueDeg}, ${sat}%, ${light}%)`;
+  tctx.fillStyle = color; tctx.strokeStyle = color; tctx.shadowColor = color;
+  tctx.shadowBlur = size * (0.8 + boost * 0.7) * (0.7 + 0.3 * Math.abs(tumble));
+  tctx.globalAlpha = 0.9;
+  drawFn(size, t); tctx.restore();
+}
+function drawScaleHUD(x, y, size){
+  tctx.save(); tctx.translate(x, y);
+  const color = '#ffb454';
+  tctx.strokeStyle = color; tctx.shadowColor = color; tctx.shadowBlur = 14; tctx.lineWidth = 2.5;
+  const frac = Math.min(1, Math.max(0, (size - 8) / (100 - 8)));
+  tctx.globalAlpha = 0.3; tctx.beginPath(); tctx.arc(0, 0, 30, 0, Math.PI * 2); tctx.stroke();
+  tctx.globalAlpha = 0.9; tctx.beginPath(); tctx.arc(0, 0, 30, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); tctx.stroke();
+  tctx.restore();
+}
+function handSpeed(handed, pts){
+  const idxs = [4, 8, 12, 16, 20];
+  const cx = idxs.reduce((s, i) => s + pts[i].x, 0) / 5, cy = idxs.reduce((s, i) => s + pts[i].y, 0) / 5;
+  let speed = 0;
+  if(prevCenter[handed]) speed = dist(cx, cy, prevCenter[handed].x, prevCenter[handed].y);
+  prevCenter[handed] = { x: cx, y: cy };
+  return speed;
+}
+function handPushSpeed(handed, lm){
+  const idxs = [4, 8, 12, 16, 20];
+  const z = idxs.reduce((s, i) => s + lm[i].z, 0) / 5;
+  let vz = 0;
+  if(prevZ[handed] !== undefined) vz = prevZ[handed] - z;
+  prevZ[handed] = z;
+  return vz;
+}
+function fingerPattern(pts){
+  const wrist = pts[0];
+  return [[8,6],[12,10],[16,14],[20,18]].map(([tip, pip]) =>
+    dist(pts[tip].x, pts[tip].y, wrist.x, wrist.y) > dist(pts[pip].x, pts[pip].y, wrist.x, wrist.y) * 1.15
+  );
+}
+function countExtendedFingers(pts){ return fingerPattern(pts).filter(Boolean).length; }
+function updateTheme(leftPts, t){
+  if(!leftPts){ themeStableFrames = 0; return; }
+  const count = countExtendedFingers(leftPts);
+  if(count === themeCandidate) themeStableFrames++;
+  else { themeCandidate = count; themeStableFrames = 0; }
+  if(themeStableFrames === 18 && themeIndex !== themeCandidate){
+    themeIndex = themeCandidate;
+    themeFlashName = THEMES[themeIndex].name;
+    themeFlashUntil = t + 0.9;
+  }
+}
+function updateSpelling(rightPts, t){
+  if(!rightPts){ letterStableFrames = 0; return; }
+  const pat = fingerPattern(rightPts).map(b => b ? '1' : '0').join('');
+  const letter = LETTER_MAP[pat] || '';
+  if(letter === letterCandidate) letterStableFrames++;
+  else { letterCandidate = letter; letterStableFrames = 0; }
+  if(letter && letterStableFrames === 14 && letter !== lastCommittedLetter){
+    wordBuffer = (wordBuffer + letter).slice(-12);
+    lastCommittedLetter = letter;
+  }
+  if(!letter) lastCommittedLetter = '';
+}
+function drawThemeLabel(t){
+  if(t > themeFlashUntil) return;
+  const alpha = Math.min(1, (themeFlashUntil - t) / 0.9) * 0.9;
+  tctx.save(); tctx.globalAlpha = alpha;
+  tctx.font = '600 15px "IBM Plex Sans Arabic", system-ui, sans-serif'; tctx.textAlign = 'center';
+  tctx.fillStyle = '#ffffff'; tctx.shadowColor = 'rgba(160,210,255,0.8)'; tctx.shadowBlur = 10;
+  tctx.fillText('النمط: ' + themeFlashName, canvas.width / 2, 92);
+  tctx.restore();
+}
+function drawSpelledWord(){
+  if(!prevCenter.Right) return;
+  ctx.save();
+  ctx.textAlign = 'center';
+  if(wordBuffer){
+    ctx.font = '700 22px "IBM Plex Sans Arabic", system-ui, sans-serif';
+    ctx.fillStyle = '#ffffff'; ctx.shadowColor = 'rgba(160,210,255,0.9)'; ctx.shadowBlur = 12;
+    ctx.fillText(wordBuffer, prevCenter.Right.x, prevCenter.Right.y - 72);
+  }
+  if(letterCandidate){
+    ctx.font = '500 13px "IBM Plex Sans Arabic", system-ui, sans-serif';
+    ctx.globalAlpha = 0.6; ctx.fillStyle = '#ffffff';
+    ctx.fillText('(' + letterCandidate + ')', prevCenter.Right.x, prevCenter.Right.y - 48);
+  }
+  ctx.restore();
+}
+function updateSparks(t){
+  sparks = sparks.filter(s => t - s.start < 0.45);
+  sparks.forEach(s => {
+    const age = t - s.start, x = s.x + s.vx * age * 60, y = s.y + s.vy * age * 60;
+    tctx.save(); tctx.globalAlpha = Math.max(0, 1 - age / 0.45);
+    const col = `hsl(${s.hue},95%,70%)`;
+    tctx.fillStyle = col; tctx.shadowColor = col; tctx.shadowBlur = 8;
+    tctx.beginPath(); tctx.arc(x, y, 2.3, 0, Math.PI * 2); tctx.fill(); tctx.restore();
+  });
+}
+function updateThrusts(t){
+  thrusts = thrusts.filter(tr => t - tr.start < 0.4);
+  thrusts.forEach(tr => {
+    const p = (t - tr.start) / 0.4;
+    tctx.save(); tctx.globalAlpha = Math.max(0, 1 - p) * 0.85;
+    tctx.strokeStyle = 'rgba(255,255,255,0.9)'; tctx.shadowColor = 'rgba(200,230,255,0.9)';
+    tctx.shadowBlur = 16; tctx.lineWidth = 2.5;
+    for(let i = 0; i < 3; i++){ const rr = p * 70 - i * 14; if(rr > 0){ tctx.beginPath(); tctx.arc(tr.x, tr.y, rr, 0, Math.PI * 2); tctx.stroke(); } }
+    tctx.restore();
+  });
+}
+function playZap(startFreq, dur){
+  if(!audioCtx) return;
+  startFreq = startFreq || 680; dur = dur || 0.28;
+  try{
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(startFreq, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(Math.max(40, startFreq * 0.18), audioCtx.currentTime + dur);
+    g.gain.setValueAtTime(0.18, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur + 0.02);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + dur + 0.05);
+  }catch(_e){}
+}
+function checkFist(handed, pts, t){
+  const wrist = pts[0];
+  const tips = [4, 8, 12, 16, 20].map(i => pts[i]);
+  const avgDist = tips.reduce((s, p) => s + dist(p.x, p.y, wrist.x, wrist.y), 0) / tips.length;
+  const palmRef = dist(pts[9].x, pts[9].y, wrist.x, wrist.y) || 1;
+  const isFist = (avgDist / palmRef) < 1.15;
+  if(isFist && !fistState[handed]){
+    bursts.push({ x: wrist.x, y: wrist.y, start: t, hue: handed === 'Right' ? 200 : 38 });
+    clearTrail(); wordBuffer = ''; playZap();
+  }
+  fistState[handed] = isFist;
+}
+function checkFusion(right, left, t){
+  if(!right || !left){ fusionReady = true; return; }
+  const r = right.pts[8], l = left.pts[8];
+  const d = dist(r.x, r.y, l.x, l.y);
+  if(d < 26 && fusionReady){ novas.push({ x: (r.x + l.x) / 2, y: (r.y + l.y) / 2, start: t, big: false }); playZap(880, 0.18); fusionReady = false; }
+  else if(d > 50) fusionReady = true;
+}
+function updateBursts(t){
+  bursts = bursts.filter(b => t - b.start < 0.7);
+  bursts.forEach(b => {
+    const p = (t - b.start) / 0.7;
+    tctx.save(); tctx.globalAlpha = Math.max(0, 1 - p);
+    const col = `hsl(${b.hue},90%,65%)`;
+    tctx.strokeStyle = col; tctx.shadowColor = col; tctx.shadowBlur = 20; tctx.lineWidth = 3 * (1 - p) + 1;
+    [0, 0.15].forEach(off => { const rr = (p + off) * 120; if(rr > 0){ tctx.beginPath(); tctx.arc(b.x, b.y, rr, 0, Math.PI * 2); tctx.stroke(); } });
+    tctx.restore();
+  });
+}
+function updateNovas(t){
+  novas = novas.filter(n => t - n.start < (n.big ? 1.1 : 0.55));
+  novas.forEach(n => {
+    const dur = n.big ? 1.1 : 0.55, p = (t - n.start) / dur, R = (n.big ? 220 : 90) * p;
+    tctx.save(); tctx.globalAlpha = Math.max(0, 1 - p);
+    tctx.fillStyle = '#ffffff'; tctx.shadowColor = '#bfe9ff'; tctx.shadowBlur = 30;
+    tctx.beginPath(); tctx.arc(n.x, n.y, (n.big ? 14 : 8) * (1 - p * 0.4), 0, Math.PI * 2); tctx.fill();
+    tctx.strokeStyle = 'rgba(190,230,255,0.85)'; tctx.lineWidth = 2;
+    const spikes = n.big ? 10 : 7;
+    for(let i = 0; i < spikes; i++){
+      const a = i * (Math.PI * 2 / spikes) + t * 2;
+      tctx.beginPath(); tctx.moveTo(n.x + Math.cos(a) * R * 0.3, n.y + Math.sin(a) * R * 0.3);
+      tctx.lineTo(n.x + Math.cos(a) * R, n.y + Math.sin(a) * R); tctx.stroke();
+    }
+    tctx.restore();
+  });
+}
+function drawIdlePulse(t){
+  const idleFor = t - lastHandSeenAt;
+  if(idleFor < 1.2) return;
+  const fade = Math.min(1, (idleFor - 1.2) / 0.6), pulse = 40 + 10 * Math.sin(t * 2);
+  tctx.save(); tctx.globalAlpha = fade * 0.5;
+  tctx.strokeStyle = 'rgba(160,210,255,0.8)'; tctx.shadowColor = 'rgba(160,210,255,0.8)'; tctx.shadowBlur = 14; tctx.lineWidth = 1.5;
+  tctx.beginPath(); tctx.arc(canvas.width / 2, canvas.height / 2, pulse, 0, Math.PI * 2); tctx.stroke();
+  tctx.restore();
+}
+function clearTrail(){ if(tctx) tctx.clearRect(0, 0, trailCanvas.width, trailCanvas.height); }
+
+function loop(){
+  if(!running) return;
+  const now = performance.now();
+  if(video.readyState >= 2 && now !== lastTimestamp){
+    lastTimestamp = now;
+    render(handLandmarker.detectForVideo(video, now));
+  }
+  requestAnimationFrame(loop);
+}
+
+function render(results){
+  ensureTrailCanvas();
+  const rect = getCoverRect();
+  const t = performance.now() / 1000;
+
+  tctx.globalCompositeOperation = 'destination-out';
+  tctx.fillStyle = 'rgba(0,0,0,0.12)';
+  tctx.fillRect(0, 0, trailCanvas.width, trailCanvas.height);
+  tctx.globalCompositeOperation = 'source-over';
+
+  const handsThisFrame = [];
+  if(results.landmarks && results.landmarks.length){
+    results.landmarks.forEach((rawLm, i) => {
+      const handed = results.handednesses[i][0].categoryName;
+      const lm = smoothLandmarks(handed, rawLm);
+      handsThisFrame.push({ handed, lm, pts: lm.map(p => toCanvasXY(p, rect)) });
+    });
+  }
+  if(handsThisFrame.length) lastHandSeenAt = t;
+
+  const right = handsThisFrame.find(h => h.handed === 'Right');
+  const left = handsThisFrame.find(h => h.handed === 'Left');
+  if(right && left) drawHandBridge(right.pts[0], left.pts[0], t);
+  checkFusion(right, left, t);
+  updateTheme(left ? left.pts : null, t);
+  updateSpelling(right ? right.pts : null, t);
+
+  handsThisFrame.forEach(({ handed, lm, pts }) => {
+    drawSkeleton(pts);
+    checkFist(handed, pts, t);
+    if(handed === 'Right'){
+      const speed = handSpeed('Right', pts), boost = Math.min(1, speed / 40);
+      const vz = handPushSpeed('Right', lm);
+      if(vz > 0.045 && pushReady){ thrusts.push({ x: prevCenter.Right.x, y: prevCenter.Right.y, start: t }); playZap(500, 0.15); pushReady = false; }
+      else if(vz < 0.015) pushReady = true;
+      drawFingerWeb(pts, t);
+      const theme = THEMES[themeIndex];
+      FINGER_CONFIG.forEach((f, i) => {
+        const p = pts[f.idx];
+        stampFinger(p.x, p.y, brushSize, theme.hues[i], theme.sat, f.draw, t, boost);
+        if(boost > 0.35 && Math.random() < boost) sparks.push({ x: p.x, y: p.y, vx: (Math.random() - 0.5) * 2, vy: (Math.random() - 0.5) * 2, start: t, hue: theme.hues[i] });
+      });
+    } else {
+      handSpeed('Left', pts);
+      const indexTip = pts[8], thumbTip = pts[4];
+      const d = dist(indexTip.x, indexTip.y, thumbTip.x, thumbTip.y);
+      targetBrushSize = Math.max(8, Math.min(100, d * 0.85));
+      const mx = (indexTip.x + thumbTip.x) / 2, my = (indexTip.y + thumbTip.y) / 2;
+      drawScaleHUD(mx, my, targetBrushSize);
+    }
+  });
+
+  if(fistState.Left && fistState.Right && !comboFired){
+    novas.push({ x: canvas.width / 2, y: canvas.height / 2, start: t, big: true });
+    clearTrail(); wordBuffer = ''; playZap(300, 0.4); comboFired = true;
+  } else if(!(fistState.Left && fistState.Right)) comboFired = false;
+
+  updateBursts(t); updateNovas(t); updateSparks(t); updateThrusts(t);
+  drawIdlePulse(t); drawThemeLabel(t);
+
+  brushSize = lerp(brushSize, targetBrushSize, 0.18);
+  handCountEl.textContent = handsThisFrame.length ? `· ${handsThisFrame.length} يد` : '';
+
+  drawVideoCover(rect);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.drawImage(trailCanvas, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+
+  const globeRadius = 45 + (brushSize - 8) / (100 - 8) * 85;
+  drawGlobe(globeRadius, t);
+  drawSpelledWord();
+}
+
+camBtn.addEventListener('click', startCamera);
+clearBtn.addEventListener('click', () => { clearTrail(); wordBuffer = ''; });
+captureBtn.addEventListener('click', () => {
+  try{
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url; a.download = `athar-${Date.now()}.png`; a.click();
+    captureBtn.textContent = '✓'; setTimeout(() => { captureBtn.textContent = '📸'; }, 1200);
+  }catch(err){
+    console.error(err);
+    captureBtn.textContent = '⚠️'; setTimeout(() => { captureBtn.textContent = '📸'; }, 1500);
+  }
+});
+
+init();
+</script>
+</body>
+</html>
